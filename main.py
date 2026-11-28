@@ -2,6 +2,7 @@ import os #klasör yollarını birleştirmek
 import shutil #dosyayı diske kopyalamak
 from fastapi import FastAPI,UploadFile,File,HTTPException #düzenli hata fırlatmak için
 from schemas import SoruIstegi, DokumanKayit
+from pdf_islemleri import pdf_metin_cikar, metni_parcala
 app=FastAPI(title="Akıllı Doküman Asistanı API")
 
 @app.get("/")
@@ -53,12 +54,41 @@ def dokuman_yukle(dosya: UploadFile = File(...)):
     # 3. Gelen dosyayı diskteki klasöre kaydet
     with open(kayit_yolu,"wb" ) as hedef_dosya:
         shutil.copyfileobj(dosya.file,hedef_dosya)
+    # 3. YENİ: PDF'ten metni çıkar ve parçalara (chunk) böl
+    cikarilan_metin= pdf_metin_cikar(kayit_yolu)
+    parcalar= metni_parcala(cikarilan_metin,parca_boyutu=500,cakisma=50)
     return{
            "Durum":"Dosya başarıyla yüklendi",
            "dosya_adı": dosya.filename,
            "icerik_tipi": dosya.content_type,
-           "kayit_yeri": kayit_yolu
-      }
+           "kayit_yeri": kayit_yolu,
+           "toplam_karakter_sayisi": len(cikarilan_metin),
+           "olusturulan_parca_sayisi": len(parcalar),
+           "ilk_parca_onizleme": parcalar[0] if parcalar else "Parça yok"   
+    }
+
+@app.delete("/dokuman-sil/{dosya_adi}")
+
+def dokuman_sil(dosya_adi: str):
+    dosya_yolu = os.path.join(KLASOR_YOLU, dosya_adi)
+    
+    # 1. Dosya gerçekten klasörde var mı kontrol et
+    if not os.path.exists(dosya_yolu):
+        raise HTTPException(
+            status_code=404, 
+            detail="Silinmek istenen dosya bulunamadı!"
+        )
+    
+    # 2. Dosyayı diskten kalıcı olarak sil
+    os.remove(dosya_yolu)
+    
+    return {
+        "durum": "Dosya başarıyla silindi",
+        "silinen_dosya": dosya_adi
+    }
+
+
+
 
 
 
